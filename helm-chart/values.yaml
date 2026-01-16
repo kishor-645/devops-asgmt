@@ -1,0 +1,71 @@
+namespace: dev
+global:
+  imagePullPolicy: Never
+
+app:
+  replicaCount: 1
+  image: mycodev2-app:latest
+  service:
+    port: 8080
+    nodePort: 30081
+  resources:
+    limits:
+      cpu: "1000m"
+      memory: "512Mi"
+    requests:
+      cpu: "500m"
+      memory: "384Mi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  env:
+    # Prevent app from crashing if Kafka is unavailable during startup
+    SPRING_KAFKA_ADMIN_FAIL_FAST: "false"
+    # CRITICAL FIX: Tell the listener not to kill the app if the topic is missing
+    SPRING_KAFKA_LISTENER_MISSING_TOPICS_FATAL: "false"
+    # Configure consumer reconnection behavior
+    SPRING_KAFKA_CONSUMER_PROPERTIES_RECONNECT_BACKOFF_MS: "5000"
+    SPRING_KAFKA_CONSUMER_PROPERTIES_RECONNECT_BACKOFF_MAX_MS: "30000"
+  startupProbe:
+    tcpSocket:
+      port: 8080
+    failureThreshold: 30
+    periodSeconds: 3
+  livenessProbe:
+    tcpSocket:
+      port: 8080
+    periodSeconds: 20
+  readinessProbe:
+    httpGet:
+      path: /api/messages
+      port: 8080
+    periodSeconds: 10
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPU: 70
+
+mysql:
+  image: mysql:8.0
+  dbName: devopsdb
+  user: root
+  pass: password
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+
+kafka:
+  image: confluentinc/cp-kafka:7.5.0
+  clusterId: MkU3OEVBNTcwNTJENDM2Qk
+  resources:
+    limits:
+      cpu: "1000m"
+      memory: "1024Mi"
+    requests:
+      memory: "512Mi"
+      cpu: "250m"

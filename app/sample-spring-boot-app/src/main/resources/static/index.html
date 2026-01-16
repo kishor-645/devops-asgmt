@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head><title>DevOps Demo UI</title></head>
+<body style="font-family: sans-serif; padding: 20px;">
+    <h2>Kafka + MySQL Messenger</h2>
+    <input type="text" id="msg" placeholder="Type a message...">
+    <button onclick="send()">Send to Kafka</button>
+    <hr>
+    <h3>Messages in MySQL (Refresh to update)</h3>
+    <ul id="list"></ul>
+    <script>
+        async function send() {
+            const val = document.getElementById('msg').value;
+            await fetch('/api/messages', { method: 'POST', body: val });
+            document.getElementById('msg').value = '';
+            location.reload();
+        }
+        async function load() {
+            const res = await fetch('/api/messages');
+            const data = await res.json();
+            document.getElementById('list').innerHTML = data.map(m => `<li>${m.content}</li>`).join('');
+        }
+        load();
+    </script>
+</body>
+</html>
