@@ -103,17 +103,7 @@ You should see the **Jenkins Unlock** page.
 
 ### 2.2 Get the Admin Password
 
-**Option A: From Docker Logs**
-```bash
-docker logs jenkins-ci | grep -A 1 "Jenkins initial setup"
-```
-
-**Option B: From Container File**
-```bash
-docker exec jenkins-ci cat /var/jenkins_home/secrets/initialAdminPassword
-```
-
-**Option C: Using Helper Script**
+**Using Helper Script**
 ```bash
 chmod +x ci/get-jenkins-password.sh
 ./ci/get-jenkins-password.sh
@@ -133,11 +123,7 @@ chmod +x ci/get-jenkins-password.sh
 
 Jenkins will show the **Getting Started** page with two options:
 
-**Option A: Recommended Setup** (includes popular plugins)
-- Click **Install suggested plugins**
-- Wait for plugins to install (2-3 minutes)
-
-**Option B: Select Plugins**
+**Select Plugins**
 - Click **Select plugins to install**
 - Choose from available plugins
 
@@ -165,7 +151,7 @@ After plugin installation, you'll be prompted to create an admin user:
 | Field | Value |
 |-------|-------|
 | **Username** | admin |
-| **Password** | Your choice (secure password) |
+| **Password** | admin@123 |
 | **Full name** | Jenkins Admin |
 | **Email** | admin@example.com |
 
@@ -211,7 +197,7 @@ You're now on the job configuration page.
 
 - **Description**: (optional)
   ```
-  DevOps Assignment - Spring Boot Deployment Pipeline
+  Spring Boot Deployment Pipeline
   Automatically builds, containerizes, and deploys to Kubernetes
   ```
 
@@ -248,84 +234,6 @@ https://github.com/yourusername/mycodev2.git
 
 4. Leave other Git options as default
 5. Click **Save**
-
-**Option B: Pipeline script (Alternative)**
-
-If you want to copy the Jenkinsfile content directly:
-
-1. Under **Definition**, select **Pipeline script**
-2. Paste the entire Jenkinsfile content (see section below)
-3. Click **Save**
-
-### 4.3 Jenkinsfile Content (if using Option B)
-
-Copy the complete pipeline definition:
-
-```groovy
-pipeline {
-    agent any
-
-    environment {
-        // Build variables
-        DOCKER_IMAGE = "mycodev2-app"
-        NAMESPACE = "dev"
-        CHART_PATH = "helm-chart"
-    }
-
-    stages {
-        stage('Cleanup') {
-            steps {
-                // Ensure a clean slate for the build
-                sh "mvn -f app/sample-spring-boot-app/pom.xml clean"
-            }
-        }
-
-        stage('Maven Build & Test') {
-            steps {
-                sh "mvn -f app/sample-spring-boot-app/pom.xml package -DskipTests"
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                // Building the app image using the host's engine
-                sh "docker build -t ${DOCKER_IMAGE}:latest -f docker/Dockerfile ."
-            }
-        }
-
-        stage('Deploy to Kind') {
-            steps {
-                script {
-                    // Load the image into Kind so nodes can see it without a registry
-                    sh "kind load docker-image ${DOCKER_IMAGE}:latest"
-                    
-                    // Helm Upgrade/Install (Reliability improvement)
-                    sh "helm upgrade --install my-stack ${CHART_PATH} -n ${NAMESPACE} --create-namespace"
-                }
-            }
-        }
-
-        stage('Smoke Test') {
-            steps {
-                // Verify pods are scaling up
-                sh "kubectl get pods -n ${NAMESPACE}"
-                sh "kubectl get hpa -n ${NAMESPACE}"
-            }
-        }
-    }
-
-    post {
-        success {
-            echo "Successfully deployed version ${env.BUILD_ID} to Kind."
-        }
-        failure {
-            echo "Deployment failed. Check Kafka/MySQL connectivity."
-        }
-    }
-}
-```
-
----
 
 ## Step 5: Run Your First Build
 

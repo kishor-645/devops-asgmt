@@ -2,60 +2,82 @@ pipeline {
     agent any
 
     environment {
-        // Build variables
         DOCKER_IMAGE = "mycodev2-app"
+        DOCKER_TAG = "latest"
         NAMESPACE = "dev"
-        CHART_PATH = "helm-chart"
+        KIND_CLUSTER = "k8s"
     }
 
     stages {
-        stage('Cleanup') {
+        stage('Checkout') {
             steps {
-                // Ensure a clean slate for the build
-                sh "mvn -f app/sample-spring-boot-app/pom.xml clean"
-            }
-        }
-
-        stage('Maven Build & Test') {
-            steps {
-                sh "mvn -f app/sample-spring-boot-app/pom.xml package -DskipTests"
+                echo "📦 Checking out repository..."
+                checkout scm
+                sh "echo 'Repository checked out successfully'"
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                // Building the app image using the host's engine
-                sh "docker build -t ${DOCKER_IMAGE}:latest -f docker/Dockerfile ."
+                echo "🐳 Building Docker image..."
+                sh '''
+                    cd docker/
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -f Dockerfile .
+                    cd ..
+                '''
+                sh "docker images | grep ${DOCKER_IMAGE}"
             }
         }
 
-        stage('Deploy to Kind') {
+        stage('Load Image to Kind') {
             steps {
-                script {
-                    // Load the image into Kind so nodes can see it without a registry
-                    sh "kind load docker-image ${DOCKER_IMAGE}:latest"
+                echo "📥 Loading Docker image into Kind cluster..."
+                sh '''
+                    kind load docker-image ${DOCKER_IMAGE}:${DOCKER_TAG} --name ${KIND_CLUSTER}
+                    echo "✅ Image loaded successfully into Kind cluster '${KIND_CLUSTER}'"
+                '''
+            }
+        }
+
+        stage('Deploy with Helm') {
+            steps {
+                echo "⚙️ Deploying application with Helm..."
+                sh '''
+                    helm upgrade --install mycode ./helm-chart \
+                        -n ${NAMESPACE} \
+                        --create-namespace \
+                        --set app.replicaCount=1 \
+                        --wait
+                    echo "✅ Helm deployment completed"
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                echo "✔️ Verifying deployment..."
+                sh '''
+                    echo "Pods in ${NAMESPACE} namespace:"
+                    kubectl get pods -n ${NAMESPACE}
                     
-                    // Helm Upgrade/Install (Reliability improvement)
-                    sh "helm upgrade --install my-stack ${CHART_PATH} -n ${NAMESPACE} --create-namespace"
-                }
-            }
-        }
-
-        stage('Smoke Test') {
-            steps {
-                // Verify pods are scaling up
-                sh "kubectl get pods -n ${NAMESPACE}"
-                sh "kubectl get hpa -n ${NAMESPACE}"
+                    echo ""
+                    echo "Services in ${NAMESPACE} namespace:"
+                    kubectl get svc -n ${NAMESPACE}
+                    
+                    echo ""
+                    echo "Deployment status:"
+                    kubectl get deployment -n ${NAMESPACE}
+                '''
             }
         }
     }
 
     post {
         success {
-            echo "Successfully deployed version ${env.BUILD_ID} to Kind."
+            echo "✅ Pipeline completed successfully! Application deployed to Kind cluster."
         }
         failure {
-            echo "Deployment failed. Check Kafka/MySQL connectivity."
+            echo "❌ Pipeline failed. Check logs above for details."
         }
     }
 }

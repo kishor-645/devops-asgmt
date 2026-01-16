@@ -1,0 +1,23 @@
+# Jenkins persistent data
+ci/jenkins_home/
+
+# Maven
+target/
+*.jar
+*.war
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.log
