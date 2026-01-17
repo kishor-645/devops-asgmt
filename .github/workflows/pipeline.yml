@@ -34,9 +34,7 @@ jobs:
       - name: Create KinD Cluster
         uses: helm/kind-action@v1.8.0
         with:
-          # This action automatically installs Kind and creates a cluster named 'chart-testing'
           cluster_name: kind
-          # Optional: allows wait for cluster nodes
           wait: 120s 
 
       - name: Load Image into Kind
@@ -47,7 +45,6 @@ jobs:
         run: |
           kubectl create namespace dev
           helm install my-stack ./helm-chart -n dev --create-namespace
-          # Satisfies Assignment Stage: "Deploy to Dev Kubernetes namespace"
           echo "Helm chart installed, waiting for rollout..."
           sleep 15
 
@@ -72,189 +69,122 @@ jobs:
           echo "Verifying service endpoints:"
           kubectl get svc -n dev
 
-      - name: Expose App and Get URL
+      - name: Get Application Access URLs
         run: |
-          echo "===== EXPOSING APPLICATION ====="
-          echo ""
-          echo "NodePort Service Details:"
-          kubectl get svc spring-app-service -n dev -o wide
-          
-          # Get node IP (in Kind, this is localhost)
-          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-          NODE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].nodePort}')
-          
-          echo ""
-          echo "Internal Access (within cluster):"
-          echo "  URL: http://spring-app-service.dev.svc.cluster.local:8080"
-          echo ""
-          echo "NodePort Access (from Kind node):"
-          echo "  URL: http://$NODE_IP:$NODE_PORT"
-          echo ""
-
-      - name: Setup ngrok Tunnel for Public Access
-        run: |
-          echo "===== SETTING UP NGROK PUBLIC URL ====="
+          echo "======================================================================"
+          echo "           APPLICATION ENDPOINTS - ACCESS INFORMATION"
+          echo "======================================================================"
           echo ""
           
-          # Install ngrok
-          echo "Installing ngrok..."
-          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip
-          unzip -q ngrok-v3-stable-linux-amd64.zip
-          chmod +x ngrok
-          
-          echo "✅ ngrok installed"
-          echo ""
-          
-          # Note: For GitHub Actions, ngrok requires authtoken
-          # You need to set NGROK_AUTHTOKEN secret in GitHub repo settings
-          if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "⚠️  WARNING: NGROK_AUTHTOKEN not set"
-            echo "    Public ngrok URL will not be available"
-            echo "    To enable, add secret NGROK_AUTHTOKEN to GitHub repo"
-            echo ""
-            echo "    Setup:"
-            echo "    1. Sign up at https://ngrok.com (free account)"
-            echo "    2. Get authtoken from: https://dashboard.ngrok.com/auth"
-            echo "    3. Add to GitHub: Settings > Secrets > NGROK_AUTHTOKEN"
-            echo ""
-            export SKIP_NGROK=true
-          else
-            ./ngrok config add-authtoken "$NGROK_AUTHTOKEN"
-            echo "✅ ngrok authenticated"
-          fi
-
-      - name: Start Port-Forward and ngrok Tunnel
-        run: |
-          # Start kubectl port-forward in background
-          echo "Starting kubectl port-forward..."
-          kubectl port-forward -n dev svc/spring-app-service 8080:8080 > /tmp/portforward.log 2>&1 &
-          PF_PID=$!
-          echo $PF_PID > /tmp/portforward.pid
-          sleep 3
-          echo "✅ Port-forward started (PID: $PF_PID)"
-          echo ""
-          
-          # Start ngrok if authtoken is configured
-          if [ "$SKIP_NGROK" != "true" ]; then
-            echo "Starting ngrok tunnel..."
-            ./ngrok http 8080 --log=stdout > /tmp/ngrok.log 2>&1 &
-            NGROK_PID=$!
-            echo $NGROK_PID > /tmp/ngrok.pid
-            sleep 8
-            echo "✅ ngrok started (PID: $NGROK_PID)"
-            
-            # Try to get ngrok URL
-            NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o 'https://[a-z0-9-]*\.ngrok\.io' | head -1 || echo "")
-            
-            if [ ! -z "$NGROK_URL" ]; then
-              echo "🌐 PUBLIC URL: $NGROK_URL"
-              echo "NGROK_URL=$NGROK_URL" >> $GITHUB_ENV
-            else
-              echo "⚠️  Could not retrieve ngrok URL"
-              echo "Check logs: https://dashboard.ngrok.com/"
-            fi
-          else
-            echo "⚠️  ngrok skipped (no authtoken)"
-          fi
-          echo ""
-
-      - name: Test Application Endpoints
-        run: |
-          # Wait a bit for app to fully stabilize
-          sleep 10
-          
+          # Get cluster IP (internal access)
           SERVICE_IP=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.status.clusterIP}')
           SERVICE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].port}')
           
-          echo "===== TESTING APPLICATION ====="
-          echo "Testing at http://$SERVICE_IP:$SERVICE_PORT"
+          # Get NodePort (external access)
+          NODE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].nodePort}')
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+          
+          echo "🔗 CLUSTER INTERNAL ACCESS:"
+          echo "   URL: http://$SERVICE_IP:$SERVICE_PORT"
+          echo "   Use: Inside pod or from another pod in cluster"
+          echo ""
+          echo "🔗 NODEPORT ACCESS (Kind node):"
+          echo "   URL: http://$NODE_IP:$NODE_PORT"
+          echo "   Use: From GitHub Actions runner or external access"
+          echo ""
+          
+          # Save to environment for use in next steps
+          echo "INTERNAL_URL=http://$SERVICE_IP:$SERVICE_PORT" >> $GITHUB_ENV
+          echo "NODEPORT_URL=http://$NODE_IP:$NODE_PORT" >> $GITHUB_ENV
+
+      - name: Test Application Endpoints
+        run: |
+          # Use cluster IP for internal testing
+          TEST_URL="${{ env.INTERNAL_URL }}"
+          
+          echo "======================================================================"
+          echo "                    TESTING ENDPOINTS"
+          echo "======================================================================"
+          echo "Testing at: $TEST_URL"
           echo ""
           
           # Test GET endpoint
-          echo "1. Testing GET /api/messages (should be empty initially):"
-          curl -s http://$SERVICE_IP:$SERVICE_PORT/api/messages || echo "GET request failed"
+          echo "1️⃣  Testing GET /api/messages (should be empty initially):"
+          curl -s "$TEST_URL/api/messages" || echo "❌ GET request failed"
           echo ""
           echo ""
           
           # Test POST endpoint
-          echo "2. Testing POST /api/messages (produce a message):"
+          echo "2️⃣  Testing POST /api/messages (produce a message):"
+          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
           curl -s -X POST -H "Content-Type: text/plain" \
-            -d "CI/CD Pipeline Test Message from GitHub Actions" \
-            http://$SERVICE_IP:$SERVICE_PORT/api/messages || echo "POST request failed"
+            -d "✅ CI/CD Pipeline Test: $TIMESTAMP" \
+            "$TEST_URL/api/messages" || echo "❌ POST request failed"
           echo ""
           echo ""
           
-          # Wait for message to be processed
+          # Wait for message processing
           sleep 5
           
-          # Test GET again
-          echo "3. Testing GET /api/messages (should contain message):"
-          curl -s http://$SERVICE_IP:$SERVICE_PORT/api/messages || echo "GET request failed"
+          # Test GET again to verify producer-consumer
+          echo "3️⃣  Testing GET /api/messages (should contain message):"
+          curl -s "$TEST_URL/api/messages" || echo "❌ GET request failed"
           echo ""
           echo ""
 
-      - name: Display Public Testing Instructions
+      - name: Display Testing Information
         run: |
           echo "======================================================================"
-          echo "             🚀 APPLICATION IS LIVE AND READY FOR TESTING! 🚀"
+          echo "       🚀 APPLICATION DEPLOYED AND READY FOR TESTING 🚀"
           echo "======================================================================"
           echo ""
-          
-          if [ ! -z "${{ env.NGROK_URL }}" ]; then
-            echo "📍 PUBLIC URL (via ngrok):"
-            echo "   🌐 ${{ env.NGROK_URL }}"
-            echo ""
-          else
-            echo "📍 CLUSTER INTERNAL URL:"
-          fi
-          
-          SERVICE_IP=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.status.clusterIP}')
-          SERVICE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].port}')
-          echo "   http://$SERVICE_IP:$SERVICE_PORT"
+          echo "📍 ACCESS URLS:"
+          echo ""
+          echo "Internal (within cluster):"
+          echo "  ${{ env.INTERNAL_URL }}"
+          echo ""
+          echo "External (Kind node):"
+          echo "  ${{ env.NODEPORT_URL }}"
           echo ""
           echo "======================================================================"
-          echo "                        🧪 TESTING ENDPOINTS 🧪"
+          echo "                      🧪 TEST ENDPOINTS"
           echo "======================================================================"
           echo ""
-          
-          if [ ! -z "${{ env.NGROK_URL }}" ]; then
-            TEST_URL="${{ env.NGROK_URL }}"
-          else
-            TEST_URL="http://$SERVICE_IP:$SERVICE_PORT"
-          fi
-          
-          echo "1️⃣  GET all messages:"
-          echo "   curl $TEST_URL/api/messages"
+          echo "GET all messages:"
+          echo "  curl ${{ env.NODEPORT_URL }}/api/messages"
           echo ""
-          echo "2️⃣  POST a new message:"
-          echo "   curl -X POST -H 'Content-Type: text/plain' \\"
-          echo "     -d 'Your test message' \\"
-          echo "     $TEST_URL/api/messages"
-          echo ""
-          echo "3️⃣  Open in browser:"
-          echo "   $TEST_URL/api/messages"
+          echo "POST a new message:"
+          echo "  curl -X POST -H 'Content-Type: text/plain' \\"
+          echo "    -d 'test message' \\"
+          echo "    ${{ env.NODEPORT_URL }}/api/messages"
           echo ""
           echo "======================================================================"
-          echo "🔧 FULL STACK COMPONENTS:"
+          echo "              📊 FULL STACK COMPONENTS - DEPLOYMENT STATUS"
           echo "======================================================================"
+          echo ""
           kubectl get all -n dev
           echo ""
           echo "======================================================================"
           echo ""
 
-      - name: Extended Testing Period (5 Minutes - 300 seconds)
+      - name: Testing Window - 5 Minutes
         run: |
           echo "======================================================================"
-          echo "          ⏱️  TESTING WINDOW OPEN FOR 5 MINUTES ⏱️"
+          echo "        ⏱️  TESTING WINDOW OPEN FOR 5 MINUTES (300 seconds) ⏱️"
           echo "======================================================================"
           echo ""
-          echo "✅ Application is running at: ${{ env.PUBLIC_URL }}"
+          echo "✅ Application is running at:"
+          echo "   Internal: ${{ env.INTERNAL_URL }}"
+          echo "   External: ${{ env.NODEPORT_URL }}"
           echo ""
-          echo "Use this time to:"
-          echo "  • Test the API endpoints"
-          echo "  • Verify message producer-consumer flow"
-          echo "  • Check database connectivity"
-          echo "  • Review pod logs in Actions console"
+          echo "🔧 Full stack components ready:"
+          kubectl get pods -n dev
+          echo ""
+          echo "You can now:"
+          echo "  • Test API endpoints from GitHub Actions logs"
+          echo "  • Access application from within Kind cluster"
+          echo "  • Verify producer-consumer (Kafka) flow"
+          echo "  • Check database persistence (MySQL)"
           echo ""
           echo "Starting 5-minute countdown..."
           echo ""
@@ -266,7 +196,7 @@ jobs:
             seconds=$((remaining % 60))
             
             if [ $((i % 12)) -eq 0 ] || [ $i -eq 1 ]; then
-              echo "⏳ Time remaining: ${minutes}m ${seconds}s"
+              printf "⏳ Time remaining: %02dm %02ds\n" $minutes $seconds
             fi
             
             sleep 5
@@ -280,26 +210,36 @@ jobs:
 
       - name: Show Final Deployment Status
         run: |
-          echo "===== FINAL DEPLOYMENT STATUS ====="
+          echo "======================================================================"
+          echo "                    📋 FINAL DEPLOYMENT STATUS"
+          echo "======================================================================"
           echo ""
           echo "Pods in dev namespace:"
           kubectl get pods -n dev -o wide
           echo ""
-          echo "Pod logs (last 30 lines each):"
+          echo "Services:"
+          kubectl get svc -n dev
           echo ""
-          echo "--- MySQL logs ---"
-          kubectl logs -n dev -l app=mysql --tail=20 || true
+          echo "======================================================================"
+          echo "                        📝 SERVICE LOGS"
+          echo "======================================================================"
           echo ""
-          echo "--- Kafka logs ---"
-          kubectl logs -n dev -l app=kafka --tail=20 || true
+          echo "--- MySQL Pod Logs (last 20 lines) ---"
+          kubectl logs -n dev -l app=mysql --tail=20 || echo "⚠️  No logs available"
           echo ""
-          echo "--- Spring App logs ---"
-          kubectl logs -n dev -l app=spring-app --tail=30 || true
+          echo "--- Kafka Pod Logs (last 20 lines) ---"
+          kubectl logs -n dev -l app=kafka --tail=20 || echo "⚠️  No logs available"
+          echo ""
+          echo "--- Spring App Pod Logs (last 50 lines) ---"
+          kubectl logs -n dev -l app=spring-app --tail=50 || echo "⚠️  No logs available"
+          echo ""
+          echo "======================================================================"
           echo ""
           
       - name: Stability Documentation Check
         run: |
           if [ ! -f "stability-cost.md" ]; then
             echo "Warning: stability-cost.md file is missing (Required for Assignment)"
-            # exit 1  # Uncomment to fail build if doc is missing
+          else
+            echo "✅ stability-cost.md is present"
           fi
