@@ -44,6 +44,12 @@ spec:
         env:
         - name: DB_HOST
           value: "mysql-service"
+        - name: DB_NAME
+          value: "devopsdb"
+        - name: DB_USER
+          value: "root"
+        - name: DB_PASS
+          value: "password"
         - name: KAFKA_BROKER
           value: "kafka-service:9092"
         - name: SPRING_KAFKA_ADMIN_FAIL_FAST
@@ -60,16 +66,17 @@ spec:
         startupProbe:
           tcpSocket:
             port: 8080
-          failureThreshold: {{ .Values.app.startupProbe.failureThreshold }}
-          periodSeconds: {{ .Values.app.startupProbe.periodSeconds }}
+          failureThreshold: 60
+          periodSeconds: 3
         livenessProbe:
           tcpSocket:
             port: 8080
-          periodSeconds: {{ .Values.app.livenessProbe.periodSeconds }}
+          initialDelaySeconds: 45
+          periodSeconds: 15
         readinessProbe:
           httpGet:
             path: {{ .Values.app.readinessProbe.httpGet.path }}
             port: {{ .Values.app.readinessProbe.httpGet.port }}
-          initialDelaySeconds: 30
-          periodSeconds: {{ .Values.app.readinessProbe.periodSeconds }}
-          failureThreshold: 5
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 10
