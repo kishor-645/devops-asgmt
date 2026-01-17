@@ -84,12 +84,58 @@ jobs:
           NODE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].nodePort}')
           
           echo ""
-          echo "✅ APPLICATION URL: http://$NODE_IP:$NODE_PORT"
+          echo "Internal Access (within cluster):"
+          echo "  URL: http://spring-app-service.dev.svc.cluster.local:8080"
           echo ""
-          echo "API Endpoints to test:"
-          echo "  POST (Produce message): http://$NODE_IP:$NODE_PORT/api/messages"
-          echo "  GET  (Retrieve messages): http://$NODE_IP:$NODE_PORT/api/messages"
+          echo "NodePort Access (from Kind node):"
+          echo "  URL: http://$NODE_IP:$NODE_PORT"
           echo ""
+
+      - name: Setup ngrok Tunnel for Public Access
+        run: |
+          echo "===== SETTING UP NGROK PUBLIC URL ====="
+          echo ""
+          
+          # Install ngrok
+          echo "Installing ngrok..."
+          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip
+          unzip -q ngrok-v3-stable-linux-amd64.zip
+          chmod +x ngrok
+          
+          # Start ngrok in background (tunnel to localhost:8080 which we'll port-forward to)
+          echo "Starting ngrok tunnel..."
+          ./ngrok http 8080 --log=stdout > /tmp/ngrok.log 2>&1 &
+          NGROK_PID=$!
+          echo $NGROK_PID > /tmp/ngrok.pid
+          
+          # Wait for ngrok to start and get the URL
+          echo "Waiting for ngrok to initialize..."
+          sleep 10
+          
+          # Extract ngrok public URL from logs or API
+          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d'"' -f4)
+          
+          if [ -z "$NGROK_URL" ]; then
+            echo "⚠️ ngrok URL not available, using internal cluster IP"
+            SERVICE_IP=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.status.clusterIP}')
+            SERVICE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].port}')
+            PUBLIC_URL="http://$SERVICE_IP:$SERVICE_PORT"
+          else
+            PUBLIC_URL="$NGROK_URL"
+          fi
+          
+          echo "🌐 PUBLIC URL: $PUBLIC_URL"
+          echo "PUBLIC_URL=$PUBLIC_URL" >> $GITHUB_ENV
+          echo ""
+
+      - name: Start kubectl Port-Forward for ngrok
+        run: |
+          echo "Starting kubectl port-forward to expose app to ngrok..."
+          kubectl port-forward -n dev svc/spring-app-service 8080:8080 > /tmp/portforward.log 2>&1 &
+          PF_PID=$!
+          echo $PF_PID > /tmp/portforward.pid
+          sleep 3
+          echo "Port-forward started (PID: $PF_PID)"
 
       - name: Test Application Endpoints
         run: |
@@ -126,21 +172,77 @@ jobs:
           echo ""
           echo ""
 
-      - name: Application Testing Period (Hold for 60 seconds)
+      - name: Display Public Testing Instructions
         run: |
-          echo "===== TESTING PERIOD ====="
+          echo "======================================================================"
+          echo "             🚀 APPLICATION IS LIVE AND READY FOR TESTING! 🚀"
+          echo "======================================================================"
           echo ""
-          echo "Application is running and accessible!"
+          echo "📍 PUBLIC URL (via ngrok):"
+          echo "   🌐 ${{ env.PUBLIC_URL }}"
           echo ""
-          echo "To test manually in Kind cluster:"
-          echo "  kubectl port-forward -n dev svc/spring-app-service 8080:8080"
+          echo "📍 CLUSTER INTERNAL URL:"
+          SERVICE_IP=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.status.clusterIP}')
+          SERVICE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].port}')
+          echo "   http://$SERVICE_IP:$SERVICE_PORT"
           echo ""
-          echo "Then access: http://localhost:8080/api/messages"
+          echo "======================================================================"
+          echo "                        🧪 TESTING ENDPOINTS 🧪"
+          echo "======================================================================"
           echo ""
-          echo "Holding for 60 seconds to allow manual verification..."
-          sleep 60
+          echo "1️⃣  GET all messages:"
+          echo "   curl ${{ env.PUBLIC_URL }}/api/messages"
           echo ""
-          echo "✅ Testing period complete!"
+          echo "2️⃣  POST a new message:"
+          echo "   curl -X POST -H 'Content-Type: text/plain' \\"
+          echo "     -d 'Your test message' \\"
+          echo "     ${{ env.PUBLIC_URL }}/api/messages"
+          echo ""
+          echo "3️⃣  Open in browser:"
+          echo "   ${{ env.PUBLIC_URL }}/api/messages"
+          echo ""
+          echo "======================================================================"
+          echo "🔧 FULL STACK COMPONENTS:"
+          echo "======================================================================"
+          kubectl get all -n dev
+          echo ""
+          echo "======================================================================"
+          echo ""
+
+      - name: Extended Testing Period (5 Minutes - 300 seconds)
+        run: |
+          echo "======================================================================"
+          echo "          ⏱️  TESTING WINDOW OPEN FOR 5 MINUTES ⏱️"
+          echo "======================================================================"
+          echo ""
+          echo "✅ Application is running at: ${{ env.PUBLIC_URL }}"
+          echo ""
+          echo "Use this time to:"
+          echo "  • Test the API endpoints"
+          echo "  • Verify message producer-consumer flow"
+          echo "  • Check database connectivity"
+          echo "  • Review pod logs in Actions console"
+          echo ""
+          echo "Starting 5-minute countdown..."
+          echo ""
+          
+          for i in {1..60}; do
+            elapsed=$((($i - 1) * 5))
+            remaining=$((300 - $elapsed))
+            minutes=$((remaining / 60))
+            seconds=$((remaining % 60))
+            
+            if [ $((i % 12)) -eq 0 ] || [ $i -eq 1 ]; then
+              echo "⏳ Time remaining: ${minutes}m ${seconds}s"
+            fi
+            
+            sleep 5
+          done
+          
+          echo ""
+          echo "======================================================================"
+          echo "               ✅ 5-MINUTE TESTING PERIOD COMPLETE ✅"
+          echo "======================================================================"
           echo ""
 
       - name: Show Final Deployment Status
