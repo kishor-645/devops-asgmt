@@ -57,51 +57,13 @@ Check **GitHub Actions** tab in your repo for logs and public URL.
 
 ### Option 2: Local Setup with Kind & Helm
 
-**Quick setup:**
-
 ```bash
 bash setup-local.sh
 ```
 
-The script will:
-1. Build Docker image
-2. Create Kind cluster
-3. Load image to Kind
-4. Deploy with Helm
-5. Port-forward to localhost:8080
-6. Test endpoints
-
 Application available at: `http://localhost:8080/api/messages`
 
-**Manual setup:**
-
-```bash
-# Build image
-docker build -t mycodev2-app:latest -f docker/Dockerfile .
-
-# Create cluster
-kind create cluster --name kind
-
-# Load image
-kind load docker-image mycodev2-app:latest --name kind
-
-# Deploy
-kubectl create namespace dev
-helm install my-stack ./helm-chart -n dev --create-namespace
-
-# Wait for pods
-kubectl get pods -n dev --watch
-
-# Port-forward
-kubectl port-forward -n dev svc/spring-app-service 8080:8080
-
-# In another terminal - test
-curl http://localhost:8080/api/messages
-```
-
-**Helm chart configuration:**
-
-See `helm-chart/README.md` for custom values and advanced setup.
+For custom Helm configuration, see `helm-chart/README.md`
 
 ---
 
