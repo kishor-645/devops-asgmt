@@ -46,7 +46,7 @@ jobs:
       - name: Helm Deploy to 'dev' Namespace
         run: |
           kubectl create namespace dev
-          helm upgrade --install my-stack ./helm-chart -n dev --create-namespace --wait --timeout 2m
+          helm install my-stack ./helm-chart -n dev --create-namespace --wait --timeout 2m
           # Satisfies Assignment Stage: "Deploy to Dev Kubernetes namespace"
 
       - name: Deployment Verification (Smoke Test)
