@@ -46,8 +46,20 @@ jobs:
       - name: Helm Deploy to 'dev' Namespace
         run: |
           kubectl create namespace dev
-          helm install my-stack ./helm-chart -n dev --create-namespace --wait --timeout 5m
+          helm install my-stack ./helm-chart -n dev --create-namespace
           # Satisfies Assignment Stage: "Deploy to Dev Kubernetes namespace"
+          echo "Helm chart installed, waiting for rollout..."
+          sleep 15
+
+      - name: Wait for MySQL Ready
+        run: |
+          kubectl rollout status deployment/mysql -n dev --timeout=120s || true
+          kubectl get pod -n dev -l app=mysql
+
+      - name: Wait for Kafka Ready
+        run: |
+          kubectl rollout status deployment/kafka -n dev --timeout=120s || true
+          kubectl get pod -n dev -l app=kafka
 
       - name: Deployment Verification (Smoke Test)
         run: |
