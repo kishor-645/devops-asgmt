@@ -103,7 +103,7 @@ jobs:
 
       - name: Test Endpoints
         run: |
-          Click Me --> TEST_URL="${{ env.PUBLIC_URL }}"
+          TEST_URL="${{ env.PUBLIC_URL }}"
           sleep 3
           
           echo "Testing GET /api/messages:"
