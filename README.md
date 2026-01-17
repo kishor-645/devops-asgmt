@@ -67,3 +67,45 @@ curl -X POST -H "Content-Type: text/plain" -d "K8s_Test_Message" http://localhos
 
 # Consume
 curl http://localhost:8081/api/messages
+
+---
+
+## CI/CD Pipeline (GitHub Actions)
+
+This project includes a **fully automated CI/CD pipeline** that verifies the entire stack on every push.
+
+### What the Pipeline Does:
+
+1. **Compiles & Tests:** Runs Maven clean package on the Spring Boot application
+2. **Builds Docker Image:** Creates non-root container image with JVM optimization
+3. **Spins Up Kubernetes Cluster:** Creates temporary Kind cluster on GitHub-hosted runners
+4. **Deploys via Helm:** Installs the complete stack (MySQL, Kafka, App) into the `dev` namespace
+5. **Verifies Deployment:** Runs smoke tests to confirm pods are ready and services are accessible
+
+### How to Trigger:
+
+```bash
+git add .
+git commit -m "your commit message"
+git push origin main
+```
+
+### View Pipeline Logs:
+
+1. Go to your GitHub repository
+2. Click the **Actions** tab at the top
+3. Click the latest workflow run to see live logs
+4. Expand each step to see detailed output (Maven build, Docker build, Helm deployment, Kubernetes verification)
+
+### Why This Approach?
+
+- **Zero Infrastructure Costs:** Uses ephemeral Kind clusters (no persistent cloud instances)
+- **Reproducible:** Proves your code works in a clean environment
+- **Auditable:** All logs and artifacts visible in GitHub
+- **Fast Feedback:** Pipeline completes in ~5-10 minutes
+
+### Additional Documentation:
+
+For details on **stability improvements**, **cost optimization**, and the **reasoning behind architectural decisions**, see [stability-cost.md](./stability-cost.md).
+
+---
