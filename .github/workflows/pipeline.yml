@@ -102,40 +102,61 @@ jobs:
           unzip -q ngrok-v3-stable-linux-amd64.zip
           chmod +x ngrok
           
-          # Start ngrok in background (tunnel to localhost:8080 which we'll port-forward to)
-          echo "Starting ngrok tunnel..."
-          ./ngrok http 8080 --log=stdout > /tmp/ngrok.log 2>&1 &
-          NGROK_PID=$!
-          echo $NGROK_PID > /tmp/ngrok.pid
-          
-          # Wait for ngrok to start and get the URL
-          echo "Waiting for ngrok to initialize..."
-          sleep 10
-          
-          # Extract ngrok public URL from logs or API
-          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d'"' -f4)
-          
-          if [ -z "$NGROK_URL" ]; then
-            echo "⚠️ ngrok URL not available, using internal cluster IP"
-            SERVICE_IP=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.status.clusterIP}')
-            SERVICE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].port}')
-            PUBLIC_URL="http://$SERVICE_IP:$SERVICE_PORT"
-          else
-            PUBLIC_URL="$NGROK_URL"
-          fi
-          
-          echo "🌐 PUBLIC URL: $PUBLIC_URL"
-          echo "PUBLIC_URL=$PUBLIC_URL" >> $GITHUB_ENV
+          echo "✅ ngrok installed"
           echo ""
+          
+          # Note: For GitHub Actions, ngrok requires authtoken
+          # You need to set NGROK_AUTHTOKEN secret in GitHub repo settings
+          if [ -z "$NGROK_AUTHTOKEN" ]; then
+            echo "⚠️  WARNING: NGROK_AUTHTOKEN not set"
+            echo "    Public ngrok URL will not be available"
+            echo "    To enable, add secret NGROK_AUTHTOKEN to GitHub repo"
+            echo ""
+            echo "    Setup:"
+            echo "    1. Sign up at https://ngrok.com (free account)"
+            echo "    2. Get authtoken from: https://dashboard.ngrok.com/auth"
+            echo "    3. Add to GitHub: Settings > Secrets > NGROK_AUTHTOKEN"
+            echo ""
+            export SKIP_NGROK=true
+          else
+            ./ngrok config add-authtoken "$NGROK_AUTHTOKEN"
+            echo "✅ ngrok authenticated"
+          fi
 
-      - name: Start kubectl Port-Forward for ngrok
+      - name: Start Port-Forward and ngrok Tunnel
         run: |
-          echo "Starting kubectl port-forward to expose app to ngrok..."
+          # Start kubectl port-forward in background
+          echo "Starting kubectl port-forward..."
           kubectl port-forward -n dev svc/spring-app-service 8080:8080 > /tmp/portforward.log 2>&1 &
           PF_PID=$!
           echo $PF_PID > /tmp/portforward.pid
           sleep 3
-          echo "Port-forward started (PID: $PF_PID)"
+          echo "✅ Port-forward started (PID: $PF_PID)"
+          echo ""
+          
+          # Start ngrok if authtoken is configured
+          if [ "$SKIP_NGROK" != "true" ]; then
+            echo "Starting ngrok tunnel..."
+            ./ngrok http 8080 --log=stdout > /tmp/ngrok.log 2>&1 &
+            NGROK_PID=$!
+            echo $NGROK_PID > /tmp/ngrok.pid
+            sleep 8
+            echo "✅ ngrok started (PID: $NGROK_PID)"
+            
+            # Try to get ngrok URL
+            NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o 'https://[a-z0-9-]*\.ngrok\.io' | head -1 || echo "")
+            
+            if [ ! -z "$NGROK_URL" ]; then
+              echo "🌐 PUBLIC URL: $NGROK_URL"
+              echo "NGROK_URL=$NGROK_URL" >> $GITHUB_ENV
+            else
+              echo "⚠️  Could not retrieve ngrok URL"
+              echo "Check logs: https://dashboard.ngrok.com/"
+            fi
+          else
+            echo "⚠️  ngrok skipped (no authtoken)"
+          fi
+          echo ""
 
       - name: Test Application Endpoints
         run: |
@@ -178,10 +199,15 @@ jobs:
           echo "             🚀 APPLICATION IS LIVE AND READY FOR TESTING! 🚀"
           echo "======================================================================"
           echo ""
-          echo "📍 PUBLIC URL (via ngrok):"
-          echo "   🌐 ${{ env.PUBLIC_URL }}"
-          echo ""
-          echo "📍 CLUSTER INTERNAL URL:"
+          
+          if [ ! -z "${{ env.NGROK_URL }}" ]; then
+            echo "📍 PUBLIC URL (via ngrok):"
+            echo "   🌐 ${{ env.NGROK_URL }}"
+            echo ""
+          else
+            echo "📍 CLUSTER INTERNAL URL:"
+          fi
+          
           SERVICE_IP=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.status.clusterIP}')
           SERVICE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].port}')
           echo "   http://$SERVICE_IP:$SERVICE_PORT"
@@ -190,16 +216,23 @@ jobs:
           echo "                        🧪 TESTING ENDPOINTS 🧪"
           echo "======================================================================"
           echo ""
+          
+          if [ ! -z "${{ env.NGROK_URL }}" ]; then
+            TEST_URL="${{ env.NGROK_URL }}"
+          else
+            TEST_URL="http://$SERVICE_IP:$SERVICE_PORT"
+          fi
+          
           echo "1️⃣  GET all messages:"
-          echo "   curl ${{ env.PUBLIC_URL }}/api/messages"
+          echo "   curl $TEST_URL/api/messages"
           echo ""
           echo "2️⃣  POST a new message:"
           echo "   curl -X POST -H 'Content-Type: text/plain' \\"
           echo "     -d 'Your test message' \\"
-          echo "     ${{ env.PUBLIC_URL }}/api/messages"
+          echo "     $TEST_URL/api/messages"
           echo ""
           echo "3️⃣  Open in browser:"
-          echo "   ${{ env.PUBLIC_URL }}/api/messages"
+          echo "   $TEST_URL/api/messages"
           echo ""
           echo "======================================================================"
           echo "🔧 FULL STACK COMPONENTS:"
