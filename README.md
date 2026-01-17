@@ -57,78 +57,51 @@ Check **GitHub Actions** tab in your repo for logs and public URL.
 
 ### Option 2: Local Setup with Kind & Helm
 
-#### Prerequisites
+**Quick setup:**
+
 ```bash
-# Install these tools
-kind --version          # Kubernetes in Docker
-helm version           # Kubernetes package manager
-kubectl version        # Kubernetes CLI
-docker --version       # Container runtime
-mvn --version         # Maven build tool
+bash setup-local.sh
 ```
 
-#### Step 1: Build Application
+The script will:
+1. Build Docker image
+2. Create Kind cluster
+3. Load image to Kind
+4. Deploy with Helm
+5. Port-forward to localhost:8080
+6. Test endpoints
+
+Application available at: `http://localhost:8080/api/messages`
+
+**Manual setup:**
 
 ```bash
-cd app/sample-spring-boot-app
-mvn clean package -DskipTests
-cd ../../
-```
-
-#### Step 2: Build Docker Image
-
-```bash
+# Build image
 docker build -t mycodev2-app:latest -f docker/Dockerfile .
-```
 
-#### Step 3: Create Kind Cluster
-
-```bash
+# Create cluster
 kind create cluster --name kind
-```
 
-#### Step 4: Load Image to Kind
-
-```bash
+# Load image
 kind load docker-image mycodev2-app:latest --name kind
-```
 
-#### Step 5: Deploy with Helm
-
-```bash
+# Deploy
 kubectl create namespace dev
 helm install my-stack ./helm-chart -n dev --create-namespace
-```
 
-#### Step 6: Wait for Services
-
-```bash
-# Watch until all pods are Running and Ready
+# Wait for pods
 kubectl get pods -n dev --watch
-```
 
-#### Step 7: Port-Forward to Local
-
-```bash
+# Port-forward
 kubectl port-forward -n dev svc/spring-app-service 8080:8080
-```
 
-#### Step 8: Test Endpoints
-
-In a new terminal:
-
-```bash
-# Get all messages
-curl http://localhost:8080/api/messages
-
-# Send a message
-curl -X POST -H "Content-Type: text/plain" \
-  -d "test message" \
-  http://localhost:8080/api/messages
-
-# Get messages again (should include new message from DB)
+# In another terminal - test
 curl http://localhost:8080/api/messages
 ```
+
+**Helm chart configuration:**
+
+See `helm-chart/README.md` for custom values and advanced setup.
 
 ---
 
