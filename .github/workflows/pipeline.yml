@@ -71,6 +71,96 @@ jobs:
           
           echo "Verifying service endpoints:"
           kubectl get svc -n dev
+
+      - name: Expose App and Get URL
+        run: |
+          echo "===== EXPOSING APPLICATION ====="
+          echo ""
+          echo "NodePort Service Details:"
+          kubectl get svc spring-app-service -n dev -o wide
+          
+          # Get node IP (in Kind, this is localhost)
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+          NODE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].nodePort}')
+          
+          echo ""
+          echo "✅ APPLICATION URL: http://$NODE_IP:$NODE_PORT"
+          echo ""
+          echo "API Endpoints to test:"
+          echo "  POST (Produce message): http://$NODE_IP:$NODE_PORT/api/messages"
+          echo "  GET  (Retrieve messages): http://$NODE_IP:$NODE_PORT/api/messages"
+          echo ""
+
+      - name: Test Application Endpoints
+        run: |
+          # Wait a bit for app to fully stabilize
+          sleep 10
+          
+          SERVICE_IP=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.status.clusterIP}')
+          SERVICE_PORT=$(kubectl get svc spring-app-service -n dev -o jsonpath='{.spec.ports[0].port}')
+          
+          echo "===== TESTING APPLICATION ====="
+          echo "Testing at http://$SERVICE_IP:$SERVICE_PORT"
+          echo ""
+          
+          # Test GET endpoint
+          echo "1. Testing GET /api/messages (should be empty initially):"
+          curl -s http://$SERVICE_IP:$SERVICE_PORT/api/messages || echo "GET request failed"
+          echo ""
+          echo ""
+          
+          # Test POST endpoint
+          echo "2. Testing POST /api/messages (produce a message):"
+          curl -s -X POST -H "Content-Type: text/plain" \
+            -d "CI/CD Pipeline Test Message from GitHub Actions" \
+            http://$SERVICE_IP:$SERVICE_PORT/api/messages || echo "POST request failed"
+          echo ""
+          echo ""
+          
+          # Wait for message to be processed
+          sleep 5
+          
+          # Test GET again
+          echo "3. Testing GET /api/messages (should contain message):"
+          curl -s http://$SERVICE_IP:$SERVICE_PORT/api/messages || echo "GET request failed"
+          echo ""
+          echo ""
+
+      - name: Application Testing Period (Hold for 60 seconds)
+        run: |
+          echo "===== TESTING PERIOD ====="
+          echo ""
+          echo "Application is running and accessible!"
+          echo ""
+          echo "To test manually in Kind cluster:"
+          echo "  kubectl port-forward -n dev svc/spring-app-service 8080:8080"
+          echo ""
+          echo "Then access: http://localhost:8080/api/messages"
+          echo ""
+          echo "Holding for 60 seconds to allow manual verification..."
+          sleep 60
+          echo ""
+          echo "✅ Testing period complete!"
+          echo ""
+
+      - name: Show Final Deployment Status
+        run: |
+          echo "===== FINAL DEPLOYMENT STATUS ====="
+          echo ""
+          echo "Pods in dev namespace:"
+          kubectl get pods -n dev -o wide
+          echo ""
+          echo "Pod logs (last 30 lines each):"
+          echo ""
+          echo "--- MySQL logs ---"
+          kubectl logs -n dev -l app=mysql --tail=20 || true
+          echo ""
+          echo "--- Kafka logs ---"
+          kubectl logs -n dev -l app=kafka --tail=20 || true
+          echo ""
+          echo "--- Spring App logs ---"
+          kubectl logs -n dev -l app=spring-app --tail=30 || true
+          echo ""
           
       - name: Stability Documentation Check
         run: |
