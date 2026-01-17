@@ -36,30 +36,34 @@ spec:
           value: "broker,controller"
         - name: KAFKA_CONTROLLER_QUORUM_VOTERS
           value: "1@localhost:29093"
-        - name: KAFKA_CONTROLLER_LISTENER_NAMES
-          value: "CONTROLLER"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
         - name: KAFKA_LISTENERS
           value: "INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093"
         - name: KAFKA_ADVERTISED_LISTENERS
           value: "INTERNAL://kafka-service:9092"
-        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-          value: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
         - name: KAFKA_INTER_BROKER_LISTENER_NAME
           value: "INTERNAL"
-        - name: CLUSTER_ID
-          value: {{ .Values.kafka.clusterId }}
+        - name: KAFKA_CONTROLLER_LISTENER_NAMES
+          value: "CONTROLLER"
         - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
           value: "1"
+        - name: CLUSTER_ID
+          value: {{ .Values.kafka.clusterId }}
+        - name: LOG_DIR
+          value: "/tmp/kafka-logs"
         resources:
           {{- toYaml .Values.kafka.resources | nindent 10 }}
         # TCP Socket probes: Fast, efficient, and reliable for Kafka
         livenessProbe:
           tcpSocket:
             port: 9092
-          initialDelaySeconds: 30
+          initialDelaySeconds: 45
           periodSeconds: 10
+          failureThreshold: 3
         readinessProbe:
           tcpSocket:
             port: 9092
-          initialDelaySeconds: 30
+          initialDelaySeconds: 45
           periodSeconds: 10
+          failureThreshold: 3

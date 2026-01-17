@@ -33,7 +33,7 @@ spec:
       initContainers:
       - name: wait-for-services
         image: busybox:1.28
-        command: ['sh', '-c', "until nc -z mysql-service 3306 && nc -z kafka-service 9092; do echo waiting for mysql and kafka; sleep 2; done"]
+        command: ['sh', '-c', "timeout 120 sh -c 'until nc -z mysql-service 3306 && nc -z kafka-service 9092; do echo waiting for mysql and kafka; sleep 2; done'"]
       
       containers:
       - name: app
@@ -70,5 +70,6 @@ spec:
           httpGet:
             path: {{ .Values.app.readinessProbe.httpGet.path }}
             port: {{ .Values.app.readinessProbe.httpGet.port }}
+          initialDelaySeconds: 30
           periodSeconds: {{ .Values.app.readinessProbe.periodSeconds }}
-          periodSeconds: {{ .Values.app.readinessProbe.periodSeconds }}
+          failureThreshold: 5
