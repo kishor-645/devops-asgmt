@@ -1,269 +1,233 @@
 # DevOps Full-Stack Application
 
-A complete **Spring Boot + Kafka + MySQL** application deployed on Kubernetes with automated CI/CD via GitHub Actions.
+Spring Boot application with Kafka and MySQL deployed on Kubernetes.
 
-## 📋 Application Overview
+## What is this app?
 
-This project demonstrates a production-grade DevOps setup with:
+A full-stack application demonstrating:
+- **Spring Boot** REST API (Java 17)
+- **Kafka** message broker (KRaft mode)
+- **MySQL** database
+- **Kubernetes** deployment (Kind cluster)
+- **Helm** templating for infrastructure
 
-- **Spring Boot 3.2.2** - RESTful backend application (Java 17)
-- **Apache Kafka 7.5.0** - Message broker (KRaft mode, single node)
-- **MySQL 8.0** - Relational database for persistence
-- **Kubernetes (Kind)** - Container orchestration
-- **Helm** - Infrastructure-as-Code templating
-- **GitHub Actions** - Automated CI/CD pipeline
-
-## 🔄 Architecture Flow
+## How it works
 
 ```
-GitHub Push (main/feature/*)
-         ↓
-  GitHub Actions CI/CD
-         ↓
-  Maven Build & Tests
-         ↓
-  Docker Image Build
-         ↓
-  Kubernetes Deploy (Dev Namespace)
-         ↓
-  MySQL + Kafka + Spring Boot
-         ↓
-  Automated Testing + Public URL
+Client Request → Spring Boot API → Kafka Producer
+                                      ↓
+                                  Message Queue
+                                      ↓
+                              Kafka Consumer
+                                      ↓
+                                 MySQL Database
 ```
 
-## 🔌 How It Uses Kafka & MySQL
+**Flow:**
+1. POST message to `/api/messages` → Spring Boot receives it
+2. Message published to Kafka topic
+3. Consumer listens and saves to MySQL
+4. GET `/api/messages` → retrieves from database
 
-### Kafka Message Flow
-1. **Producer**: Spring Boot app receives POST request to `/api/messages`
-2. **Topic**: Messages published to Kafka topic `messages`
-3. **Consumer**: Spring Boot listener consumes messages
-4. **Persistence**: Consumer stores messages in MySQL database
+---
 
-### MySQL Database
-- **Database**: `devopsdb`
-- **Table**: `messages` (auto-created by Spring Data JPA)
-- **Connection**: Established via environment variables (DB_HOST, DB_USER, DB_PASS)
+## Testing Options
 
-### API Endpoints
+### Option 1: GitHub Actions Pipeline (Automated)
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/messages` | GET | Retrieve all messages from database |
-| `/api/messages` | POST | Send a message (publishes to Kafka) |
-| `/health` | GET | Health check endpoint |
-
-## 🚀 How to Run
-
-### Prerequisites
-- Docker
-- kubectl
-- Helm 3+
-- Maven 3.8+
-- Java 17+
-
-### Local Development (Kind Cluster)
-
-```bash
-# 1. Start Kind cluster
-kind create cluster --name kind --config - <<EOF
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-  - role: control-plane
-  - role: worker
-EOF
-
-# 2. Build application
-mvn -f app/sample-spring-boot-app/pom.xml clean package
-
-# 3. Build Docker image
-docker build -t mycodev2-app:latest -f docker/Dockerfile .
-
-# 4. Load into Kind
-kind load docker-image mycodev2-app:latest --name kind
-
-# 5. Create dev namespace
-kubectl create namespace dev
-
-# 6. Deploy via Helm
-helm install my-stack ./helm-chart -n dev --create-namespace
-
-# 7. Wait for pods to be ready
-kubectl get pods -n dev --watch
-
-# 8. Port-forward to access locally
-kubectl port-forward -n dev svc/spring-app-service 8080:8080
-
-# 9. Access application
-curl http://localhost:8080/api/messages
-```
-
-### Automated CI/CD (GitHub Actions)
-
-Push to `main` branch or create a pull request with `feature/*` to trigger:
+Push to main branch to trigger automatic deployment:
 
 ```bash
 git add .
-git commit -m "feat: your feature"
+git commit -m "your changes"
 git push origin main
 ```
 
-The pipeline will:
-1. Build Maven project
-2. Run tests
-3. Build Docker image
-4. Deploy to Kind cluster
-5. Run smoke tests
-6. Expose via Cloudflare Tunnel (public URL)
-7. Hold for 3-minute testing window
+**What happens:**
+- Maven builds the project
+- Docker image created
+- Kind cluster deployed
+- Helm installs all services
+- Public URL exposed via Cloudflare Tunnel
+- 3-minute testing window
 
-## 🧪 Testing the Application
+Check **GitHub Actions** tab in your repo for logs and public URL.
 
-### From Local Machine (After Port-Forward)
+---
+
+### Option 2: Local Setup with Kind & Helm
+
+#### Prerequisites
+```bash
+# Install these tools
+kind --version          # Kubernetes in Docker
+helm version           # Kubernetes package manager
+kubectl version        # Kubernetes CLI
+docker --version       # Container runtime
+mvn --version         # Maven build tool
+```
+
+#### Step 1: Build Application
+
+```bash
+cd app/sample-spring-boot-app
+mvn clean package -DskipTests
+cd ../../
+```
+
+#### Step 2: Build Docker Image
+
+```bash
+docker build -t mycodev2-app:latest -f docker/Dockerfile .
+```
+
+#### Step 3: Create Kind Cluster
+
+```bash
+kind create cluster --name kind
+```
+
+#### Step 4: Load Image to Kind
+
+```bash
+kind load docker-image mycodev2-app:latest --name kind
+```
+
+#### Step 5: Deploy with Helm
+
+```bash
+kubectl create namespace dev
+helm install my-stack ./helm-chart -n dev --create-namespace
+```
+
+#### Step 6: Wait for Services
+
+```bash
+# Watch until all pods are Running and Ready
+kubectl get pods -n dev --watch
+```
+
+#### Step 7: Port-Forward to Local
+
+```bash
+kubectl port-forward -n dev svc/spring-app-service 8080:8080
+```
+
+#### Step 8: Test Endpoints
+
+In a new terminal:
 
 ```bash
 # Get all messages
 curl http://localhost:8080/api/messages
 
 # Send a message
-curl -X POST http://localhost:8080/api/messages \
-  -H "Content-Type: application/json" \
-  -d '{"content":"Hello Kafka!"}'
+curl -X POST -H "Content-Type: text/plain" \
+  -d "test message" \
+  http://localhost:8080/api/messages
 
-# Verify message was persisted to MySQL
+# Get messages again (should include new message from DB)
 curl http://localhost:8080/api/messages
 ```
 
-### From GitHub Actions (Automatic)
+---
 
-The workflow automatically:
-1. Tests all endpoints
-2. Verifies producer-consumer flow
-3. Confirms database persistence
-4. Exposes public URL via Cloudflare Tunnel
-
-## 📊 Kubernetes Resources
+## Kubernetes Architecture
 
 ### Namespaces
-- **dev**: Development environment (auto-created)
+- `dev` - Development environment
 
-### Deployments
-- **spring-app-service**: Spring Boot application (1 replica)
-- **mysql**: MySQL database (1 instance)
-- **kafka**: Kafka broker (1 broker, KRaft mode)
+### Deployments & Services
 
-### Services
-- **spring-app-service**: NodePort (port 30081) + ClusterIP (port 8080)
-- **mysql**: ClusterIP (port 3306)
-- **kafka**: ClusterIP (port 9092)
+| Service | Type | Port | Purpose |
+|---------|------|------|---------|
+| spring-app-service | NodePort/ClusterIP | 8080 | REST API |
+| mysql | ClusterIP | 3306 | Database |
+| kafka | ClusterIP | 9092 | Message Broker |
 
 ### Resource Limits
-| Service | CPU Request | Memory Request | CPU Limit | Memory Limit |
-|---------|-------------|----------------|-----------|--------------|
-| Spring App | 250m | 256Mi | 500m | 512Mi |
-| Kafka | 250m | 512Mi | 500m | 1024Mi |
-| MySQL | 250m | 256Mi | 500m | 512Mi |
+- Spring App: 256Mi memory, 250m CPU
+- Kafka: 1Gi memory, 250m CPU
+- MySQL: 512Mi memory, 250m CPU
 
-## 🏥 Health Checks
-
-All services have configured:
-- **Startup Probe**: Initial grace period before liveness check
-- **Liveness Probe**: Automatically restarts unhealthy pods
-- **Readiness Probe**: Only serves traffic when ready
-
-## 📦 Deployment Structure
-
-```
-.
-├── .github/workflows/
-│   └── pipeline.yml              # GitHub Actions CI/CD workflow
-├── app/
-│   └── sample-spring-boot-app/   # Spring Boot application
-│       ├── pom.xml
-│       └── src/
-├── docker/
-│   └── Dockerfile                # Multi-stage Docker build
-├── helm-chart/
-│   ├── Chart.yaml
-│   ├── values.yaml
-│   └── templates/
-│       ├── app.yaml              # Spring Boot deployment
-│       ├── kafka.yaml            # Kafka deployment
-│       └── mysql.yaml            # MySQL deployment
-├── Devops-Assignment.md          # Assignment requirements
-└── README.md                      # This file
-```
-
-## 🔐 Security Features
-
-- **Non-root User**: All containers run as non-root (appuser:1000)
-- **Resource Limits**: CPU/Memory constraints prevent resource exhaustion
-- **Health Probes**: Automatic pod recovery on failure
-- **Init Containers**: Ensure dependencies (MySQL, Kafka) ready before startup
-
-## 🚨 Troubleshooting
-
-### Pod not starting?
-```bash
-# Check pod logs
-kubectl logs -n dev <pod-name>
-
-# Describe pod for events
-kubectl describe pod -n dev <pod-name>
-
-# Check events in namespace
-kubectl get events -n dev
-```
-
-### Cannot connect to database?
-```bash
-# Verify MySQL is ready
-kubectl get pod -n dev -l app=mysql
-
-# Check MySQL logs
-kubectl logs -n dev -l app=mysql
-```
-
-### Kafka consumer not consuming?
-```bash
-# Verify Kafka is ready
-kubectl get pod -n dev -l app=kafka
-
-# Check Kafka logs
-kubectl logs -n dev -l app=kafka
-
-# Verify topic exists
-kubectl exec -it -n dev <kafka-pod> -- kafka-topics.sh --list --bootstrap-server localhost:9092
-```
-
-## 📈 Next Steps (Production Deployment)
-
-To extend this for production:
-1. **Multi-region**: Deploy to AWS/Azure with cross-region replication
-2. **Monitoring**: Add Prometheus + Grafana for metrics
-3. **Logging**: Integrate ELK stack for centralized logging
-4. **Auto-scaling**: Configure HPA based on CPU/memory metrics
-5. **Database**: Replace in-memory with managed cloud database (RDS/CloudSQL)
-6. **Kafka**: Deploy Kafka cluster with replication factor > 1
-7. **Security**: Add network policies, RBAC, and pod security policies
-8. **Backup**: Implement automated database backup strategy
-
-## 📝 Notes
-
-- **Dev Namespace Only**: Currently configured for dev environment only
-- **Single Replica**: All services run on 1 pod (not production-ready)
-- **Local Storage**: Kafka and MySQL use emptyDir volumes (data lost on restart)
-- **Manual Testing Window**: 3-minute hold for manual verification after deployment
-
-## 🎯 Assignment Requirements Coverage
-
-✅ **Part 1**: GitHub repository structure with clean git flow  
-✅ **Part 2**: Fully automated CI/CD pipeline (GitHub Actions)  
-✅ **Part 3**: Kubernetes deployment with namespaces, services, resource constraints, health checks  
-✅ **Part 4**: MySQL + Kafka integration with environment variables  
-✅ **Part 5**: Production thinking built into architecture
+### Health Checks
+All services have:
+- **Startup Probe** - allows initialization time
+- **Liveness Probe** - auto-restart if unhealthy
+- **Readiness Probe** - only route traffic when ready
 
 ---
 
-**Created**: January 2026  
-**Technologies**: Spring Boot, Kafka, MySQL, Kubernetes, Helm, GitHub Actions, Docker
+## File Structure
+
+```
+.github/workflows/
+├── pipeline.yml              # GitHub Actions CI/CD
+app/
+├── sample-spring-boot-app/   # Spring Boot source code
+│   ├── pom.xml
+│   └── src/
+docker/
+├── Dockerfile                # Multi-stage build
+helm-chart/
+├── Chart.yaml
+├── values.yaml
+└── templates/
+    ├── app.yaml              # Spring Boot deployment
+    ├── kafka.yaml            # Kafka deployment
+    └── mysql.yaml            # MySQL deployment
+README.md                      # This file
+```
+
+---
+
+## Troubleshooting
+
+**Pods not starting?**
+```bash
+kubectl logs -n dev <pod-name>
+kubectl describe pod -n dev <pod-name>
+```
+
+**Can't connect to database?**
+```bash
+# Check MySQL status
+kubectl get pod -n dev -l app=mysql
+kubectl logs -n dev -l app=mysql
+```
+
+**Message not appearing in database?**
+```bash
+# Check Kafka
+kubectl get pod -n dev -l app=kafka
+kubectl logs -n dev -l app=kafka
+
+# Check Spring Boot app
+kubectl logs -n dev -l app=spring-app
+```
+
+---
+
+## Cleanup
+
+### Local Setup
+```bash
+kind delete cluster --name kind
+```
+
+### GitHub Actions
+- Automatically cleans up after workflow completes
+- Rerun workflow to test again
+
+---
+
+## Technologies
+
+- Java 17
+- Spring Boot 3.2.2
+- Kafka 7.5.0
+- MySQL 8.0
+- Kubernetes
+- Helm 3
+- Docker
+- GitHub Actions
