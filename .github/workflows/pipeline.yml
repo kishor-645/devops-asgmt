@@ -237,10 +237,10 @@ jobs:
           echo "======================================================================"
           echo ""
 
-      - name: Testing Window - 5 Minutes
+      - name: Testing Window - 3 Minutes
         run: |
           echo "======================================================================"
-          echo "        ⏱️  TESTING WINDOW OPEN FOR 5 MINUTES (300 seconds) ⏱️"
+          echo "        ⏱️  TESTING WINDOW OPEN FOR 3 MINUTES (180 seconds) ⏱️"
           echo "======================================================================"
           echo ""
           echo "✅ Application is publicly accessible at:"
@@ -251,20 +251,19 @@ jobs:
           echo ""
           echo "You can now:"
           echo "  • Test API endpoints from the public URL"
-          echo "  • Access application from anywhere on the internet"
           echo "  • Verify producer-consumer (Kafka) flow"
           echo "  • Check database persistence (MySQL)"
           echo ""
-          echo "Starting 5-minute countdown..."
+          echo "Starting 3-minute countdown..."
           echo ""
           
-          for i in {1..60}; do
+          for i in {1..36}; do
             elapsed=$((($i - 1) * 5))
-            remaining=$((300 - $elapsed))
+            remaining=$((180 - $elapsed))
             minutes=$((remaining / 60))
             seconds=$((remaining % 60))
             
-            if [ $((i % 12)) -eq 0 ] || [ $i -eq 1 ]; then
+            if [ $((i % 6)) -eq 0 ] || [ $i -eq 1 ]; then
               printf "⏳ Time remaining: %02dm %02ds\n" $minutes $seconds
             fi
             
@@ -273,7 +272,7 @@ jobs:
           
           echo ""
           echo "======================================================================"
-          echo "               ✅ 5-MINUTE TESTING PERIOD COMPLETE ✅"
+          echo "               ✅ 3-MINUTE TESTING PERIOD COMPLETE ✅"
           echo "======================================================================"
           echo ""
 
