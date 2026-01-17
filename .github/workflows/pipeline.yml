@@ -88,19 +88,87 @@ jobs:
           echo "   URL: http://$SERVICE_IP:$SERVICE_PORT"
           echo "   Use: Inside pod or from another pod in cluster"
           echo ""
-          echo "🔗 NODEPORT ACCESS (Kind node):"
+          echo "🔗 NODEPORT ACCESS (Kind node - not accessible from outside):"
           echo "   URL: http://$NODE_IP:$NODE_PORT"
-          echo "   Use: From GitHub Actions runner or external access"
           echo ""
           
           # Save to environment for use in next steps
           echo "INTERNAL_URL=http://$SERVICE_IP:$SERVICE_PORT" >> $GITHUB_ENV
-          echo "NODEPORT_URL=http://$NODE_IP:$NODE_PORT" >> $GITHUB_ENV
+          echo "SERVICE_IP=$SERVICE_IP" >> $GITHUB_ENV
+          echo "SERVICE_PORT=$SERVICE_PORT" >> $GITHUB_ENV
+
+      - name: Start Port-Forward and Cloudflare Tunnel
+        run: |
+          echo "======================================================================"
+          echo "        STARTING PORT-FORWARD AND CLOUDFLARE TUNNEL"
+          echo "======================================================================"
+          echo ""
+          
+          # Start port-forward in background to expose the service on localhost:8080
+          echo "Starting kubectl port-forward..."
+          kubectl port-forward -n dev svc/spring-app-service 8080:8080 > /tmp/portforward.log 2>&1 &
+          PF_PID=$!
+          echo $PF_PID > /tmp/portforward.pid
+          sleep 3
+          
+          if kill -0 $PF_PID 2>/dev/null; then
+            echo "✅ Port-forward started (PID: $PF_PID)"
+            echo "   Exposing: kubernetes service:8080 -> localhost:8080"
+          else
+            echo "❌ Port-forward failed!"
+            cat /tmp/portforward.log
+            exit 1
+          fi
+          echo ""
+          
+          # Test port-forward works
+          echo "Testing port-forward..."
+          sleep 2
+          if curl -s http://localhost:8080/api/messages > /dev/null 2>&1; then
+            echo "✅ Port-forward is working!"
+          else
+            echo "⚠️  Port-forward not responding yet, continuing..."
+          fi
+          echo ""
+          
+          # Install cloudflared (Cloudflare Tunnel)
+          echo "Installing cloudflared (Cloudflare Tunnel)..."
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          dpkg -i cloudflared-linux-amd64.deb
+          echo "✅ cloudflared installed"
+          echo ""
+          
+          # Start cloudflared tunnel to expose localhost:8080
+          echo "Starting Cloudflare Tunnel..."
+          cloudflared tunnel --url http://localhost:8080 > /tmp/cloudflared.log 2>&1 &
+          CF_PID=$!
+          echo $CF_PID > /tmp/cloudflared.pid
+          
+          # Wait for cloudflared to start and get the URL
+          echo "Waiting for tunnel to initialize..."
+          sleep 10
+          
+          # Extract cloudflared public URL
+          CF_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log | head -1 || echo "")
+          
+          if [ -z "$CF_URL" ]; then
+            echo "❌ Failed to get Cloudflare URL"
+            echo "Logs:"
+            tail -20 /tmp/cloudflared.log
+            kill $CF_PID 2>/dev/null || true
+            kill $PF_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          echo "✅ Cloudflare Tunnel established!"
+          echo ""
+          echo "🌐 PUBLIC URL: $CF_URL"
+          echo "PUBLIC_URL=$CF_URL" >> $GITHUB_ENV
+          echo ""
 
       - name: Test Application Endpoints
         run: |
-          # Use cluster IP for internal testing
-          TEST_URL="${{ env.INTERNAL_URL }}"
+          TEST_URL="${{ env.PUBLIC_URL }}"
           
           echo "======================================================================"
           echo "                    TESTING ENDPOINTS"
@@ -108,8 +176,11 @@ jobs:
           echo "Testing at: $TEST_URL"
           echo ""
           
+          # Wait for tunnel to stabilize
+          sleep 3
+          
           # Test GET endpoint
-          echo "1️⃣  Testing GET /api/messages (should be empty initially):"
+          echo "1️⃣  Testing GET /api/messages:"
           curl -s "$TEST_URL/api/messages" || echo "❌ GET request failed"
           echo ""
           echo ""
@@ -127,7 +198,7 @@ jobs:
           sleep 5
           
           # Test GET again to verify producer-consumer
-          echo "3️⃣  Testing GET /api/messages (should contain message):"
+          echo "3️⃣  Testing GET /api/messages (verifying producer-consumer):"
           curl -s "$TEST_URL/api/messages" || echo "❌ GET request failed"
           echo ""
           echo ""
@@ -135,28 +206,26 @@ jobs:
       - name: Display Testing Information
         run: |
           echo "======================================================================"
-          echo "       🚀 APPLICATION DEPLOYED AND READY FOR TESTING 🚀"
+          echo "       🚀 APPLICATION DEPLOYED AND ACCESSIBLE TO THE WORLD 🚀"
           echo "======================================================================"
           echo ""
-          echo "📍 ACCESS URLS:"
-          echo ""
-          echo "Internal (within cluster):"
-          echo "  ${{ env.INTERNAL_URL }}"
-          echo ""
-          echo "External (Kind node):"
-          echo "  ${{ env.NODEPORT_URL }}"
+          echo "📍 PUBLIC ACCESS URL (via Cloudflare Tunnel):"
+          echo "   🌐 ${{ env.PUBLIC_URL }}"
           echo ""
           echo "======================================================================"
           echo "                      🧪 TEST ENDPOINTS"
           echo "======================================================================"
           echo ""
           echo "GET all messages:"
-          echo "  curl ${{ env.NODEPORT_URL }}/api/messages"
+          echo "  curl ${{ env.PUBLIC_URL }}/api/messages"
           echo ""
           echo "POST a new message:"
           echo "  curl -X POST -H 'Content-Type: text/plain' \\"
           echo "    -d 'test message' \\"
-          echo "    ${{ env.NODEPORT_URL }}/api/messages"
+          echo "    ${{ env.PUBLIC_URL }}/api/messages"
+          echo ""
+          echo "Open in browser:"
+          echo "  ${{ env.PUBLIC_URL }}/api/messages"
           echo ""
           echo "======================================================================"
           echo "              📊 FULL STACK COMPONENTS - DEPLOYMENT STATUS"
@@ -173,16 +242,15 @@ jobs:
           echo "        ⏱️  TESTING WINDOW OPEN FOR 5 MINUTES (300 seconds) ⏱️"
           echo "======================================================================"
           echo ""
-          echo "✅ Application is running at:"
-          echo "   Internal: ${{ env.INTERNAL_URL }}"
-          echo "   External: ${{ env.NODEPORT_URL }}"
+          echo "✅ Application is publicly accessible at:"
+          echo "   ${{ env.PUBLIC_URL }}"
           echo ""
           echo "🔧 Full stack components ready:"
           kubectl get pods -n dev
           echo ""
           echo "You can now:"
-          echo "  • Test API endpoints from GitHub Actions logs"
-          echo "  • Access application from within Kind cluster"
+          echo "  • Test API endpoints from the public URL"
+          echo "  • Access application from anywhere on the internet"
           echo "  • Verify producer-consumer (Kafka) flow"
           echo "  • Check database persistence (MySQL)"
           echo ""
