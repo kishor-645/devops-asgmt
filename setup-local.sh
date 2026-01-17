@@ -48,16 +48,8 @@ echo ""
 
 # Wait for pods
 echo "Waiting for pods to be ready..."
-kubectl wait --for=condition=ready pod -l app=spring-app -n $NAMESPACE --timeout=120s
+kubectl wait --for=condition=ready pod -l app=spring-app -n $NAMESPACE --timeout=300s
 echo "✓ All pods ready"
-echo ""
-
-# Setup port-forward
-echo "Setting up port-forward..."
-kubectl port-forward -n $NAMESPACE svc/spring-app-service $LOCAL_PORT:8080 &
-PORT_FORWARD_PID=$!
-sleep 2
-echo "✓ Port-forward running (PID: $PORT_FORWARD_PID)"
 echo ""
 
 # Test endpoints
@@ -87,4 +79,11 @@ echo ""
 echo "Setup complete!"
 echo "Application running at: http://localhost:$LOCAL_PORT/api/messages"
 echo ""
+
+# Setup port-forward
+echo "Starting port-forward..."
+kubectl port-forward -n $NAMESPACE svc/spring-app-service $LOCAL_PORT:8080
+echo ""
 echo "To cleanup: kind delete cluster --name $CLUSTER_NAME"
+
+
